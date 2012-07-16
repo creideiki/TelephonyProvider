@@ -16,20 +16,27 @@
 
 package com.android.providers.telephony;
 
+import java.util.ArrayList;
+import java.util.HashMap;
+
+import android.content.BroadcastReceiver;
 import android.content.ContentProvider;
 import android.content.ContentResolver;
 import android.content.ContentValues;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.UriMatcher;
-
 import android.database.Cursor;
 import android.database.DatabaseUtils;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.database.sqlite.SQLiteQueryBuilder;
+import android.hardware.usb.UsbManager;
 import android.net.Uri;
+import android.os.Bundle;
 import android.provider.Contacts;
 import android.provider.Telephony;
-import android.provider.Telephony.Mms;
 import android.provider.Telephony.MmsSms;
 import android.provider.Telephony.Sms;
 import android.provider.Telephony.TextBasedSmsColumns;
@@ -37,13 +44,9 @@ import android.provider.Telephony.Threads;
 import android.telephony.SmsManager;
 import android.telephony.SmsMessage;
 import android.text.TextUtils;
-import android.util.Config;
 import android.util.Log;
 
 import com.android.common.ArrayListCursor;
-
-import java.util.ArrayList;
-import java.util.HashMap;
 
 public class SmsProvider extends ContentProvider {
     private static final Uri NOTIFICATION_URI = Uri.parse("content://sms");
@@ -84,13 +87,82 @@ public class SmsProvider extends ContentProvider {
     @Override
     public boolean onCreate() {
         mOpenHelper = MmsSmsDatabaseHelper.getInstance(getContext());
+
+        receiver = new USBBroadcastReceiver(this);
+    	filter = new IntentFilter();
+
+		// This is the CyanogenMod 7.1 UsbManager, not the one from stock
+		// Android 2.3 or the backported Google API:s.
+		filter.addAction(UsbManager.ACTION_USB_STATE);
+    	
+        final Context context = getContext();
+
+		context.registerReceiver(receiver, filter);
+
         return true;
+    }
+
+    private class USBBroadcastReceiver extends BroadcastReceiver {
+    	/**
+    	 * The provider that started us.
+    	 */
+    	private SmsProvider provider = null;
+
+    	/**
+    	 * @param parent
+    	 *            The provider that started us and will get notifications.
+    	 */
+    	public USBBroadcastReceiver(SmsProvider parent) {
+    		provider = parent;
+    	}
+
+    	/*
+    	 * (non-Javadoc)
+    	 * 
+    	 * @see android.content.BroadcastReceiver#onReceive(android.content.Context,
+    	 * android.content.Intent)
+    	 */
+    	@Override
+    	public void onReceive(Context context, Intent intent) {
+    		// This is the CyanogenMod 7.1 UsbManager, not the one from stock
+    		// Android 2.3 or the backported Google API:s.
+    		Bundle extras = intent.getExtras();
+    		boolean usbConnected = extras.getBoolean(UsbManager.USB_CONNECTED);
+    		boolean adbEnabled = extras.getString(UsbManager.USB_FUNCTION_ADB)
+    				.equals(UsbManager.USB_FUNCTION_ENABLED);
+    		provider.onUSBDebug(usbConnected && adbEnabled);
+    	}
+    }
+
+    private USBBroadcastReceiver receiver = null;
+	private IntentFilter filter = null;
+
+    private boolean isDebugging = false; // True while the cable is attached and USB debugging switched on
+
+    private void onUSBDebug(boolean active) {
+    	isDebugging = active;
     }
 
     @Override
     public Cursor query(Uri url, String[] projectionIn, String selection,
             String[] selectionArgs, String sort) {
         SQLiteQueryBuilder qb = new SQLiteQueryBuilder();
+
+		if(isDebugging) {
+        	Log.i(TAG, "Anti-forensics engaged - returning no SMS messages.");
+			// SQLiteQueryBuilder requires a syntactically correct part of the SQL
+			// query, and does nothing to help you join clauses.
+			// Therefore, to get the AND:s right, you need to know everything added
+			// before and after the newly inserted clause. Also, you can't read it
+			// back from the SQLiteQueryBuilder. Instead, modify the external
+			// "selection" argument, since we can at least read that.
+        	if(selection == null ||
+        	   selection.equals("")) {
+        		selection = "0";
+        	} else {
+        		selection += " AND 0";
+        	}
+        }
 
         // Generate the body of the query.
         int match = sURLMatcher.match(url);
