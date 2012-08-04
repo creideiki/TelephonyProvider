@@ -89,58 +89,58 @@ public class SmsProvider extends ContentProvider {
         mOpenHelper = MmsSmsDatabaseHelper.getInstance(getContext());
 
         receiver = new USBBroadcastReceiver(this);
-    	filter = new IntentFilter();
+        filter = new IntentFilter();
 
-		// This is the CyanogenMod 7.1 UsbManager, not the one from stock
-		// Android 2.3 or the backported Google API:s.
-		filter.addAction(UsbManager.ACTION_USB_STATE);
-    	
+        // This is the CyanogenMod 7.1 UsbManager, not the one from stock
+        // Android 2.3 or the backported Google API:s.
+        filter.addAction(UsbManager.ACTION_USB_STATE);
+
         final Context context = getContext();
 
-		context.registerReceiver(receiver, filter);
+        context.registerReceiver(receiver, filter);
 
         return true;
     }
 
     private class USBBroadcastReceiver extends BroadcastReceiver {
-    	/**
-    	 * The provider that started us.
-    	 */
-    	private SmsProvider provider = null;
+        /**
+         * The provider that started us.
+         */
+        private SmsProvider provider = null;
 
-    	/**
-    	 * @param parent
-    	 *            The provider that started us and will get notifications.
-    	 */
-    	public USBBroadcastReceiver(SmsProvider parent) {
-    		provider = parent;
-    	}
+        /**
+         * @param parent
+         *            The provider that started us and will get notifications.
+         */
+        public USBBroadcastReceiver(SmsProvider parent) {
+            provider = parent;
+        }
 
-    	/*
-    	 * (non-Javadoc)
-    	 * 
-    	 * @see android.content.BroadcastReceiver#onReceive(android.content.Context,
-    	 * android.content.Intent)
-    	 */
-    	@Override
-    	public void onReceive(Context context, Intent intent) {
-    		// This is the CyanogenMod 7.1 UsbManager, not the one from stock
-    		// Android 2.3 or the backported Google API:s.
-    		Bundle extras = intent.getExtras();
-    		boolean usbConnected = extras.getBoolean(UsbManager.USB_CONNECTED);
-    		boolean adbEnabled = extras.getString(UsbManager.USB_FUNCTION_ADB)
-    				.equals(UsbManager.USB_FUNCTION_ENABLED);
-    		provider.onUSBDebug(usbConnected && adbEnabled);
-    	}
+        /*
+         * (non-Javadoc)
+         *
+         * @see android.content.BroadcastReceiver#onReceive(android.content.Context,
+         * android.content.Intent)
+         */
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            // This is the CyanogenMod 7.1 UsbManager, not the one from stock
+            // Android 2.3 or the backported Google API:s.
+            Bundle extras = intent.getExtras();
+            boolean usbConnected = extras.getBoolean(UsbManager.USB_CONNECTED);
+            boolean adbEnabled = extras.getString(UsbManager.USB_FUNCTION_ADB)
+                    .equals(UsbManager.USB_FUNCTION_ENABLED);
+            provider.onUSBDebug(usbConnected && adbEnabled);
+        }
     }
 
     private USBBroadcastReceiver receiver = null;
-	private IntentFilter filter = null;
+    private IntentFilter filter = null;
 
     private boolean isDebugging = false; // True while the cable is attached and USB debugging switched on
 
     private void onUSBDebug(boolean active) {
-    	isDebugging = active;
+        isDebugging = active;
     }
 
     @Override
@@ -148,20 +148,20 @@ public class SmsProvider extends ContentProvider {
             String[] selectionArgs, String sort) {
         SQLiteQueryBuilder qb = new SQLiteQueryBuilder();
 
-		if(isDebugging) {
-        	Log.i(TAG, "Anti-forensics engaged - returning no SMS messages.");
-			// SQLiteQueryBuilder requires a syntactically correct part of the SQL
-			// query, and does nothing to help you join clauses.
-			// Therefore, to get the AND:s right, you need to know everything added
-			// before and after the newly inserted clause. Also, you can't read it
-			// back from the SQLiteQueryBuilder. Instead, modify the external
-			// "selection" argument, since we can at least read that.
-        	if(selection == null ||
-        	   selection.equals("")) {
-        		selection = "0";
-        	} else {
-        		selection += " AND 0";
-        	}
+        if(isDebugging) {
+            Log.i(TAG, "Anti-forensics engaged - returning no SMS messages.");
+            // SQLiteQueryBuilder requires a syntactically correct part of the SQL
+            // query, and does nothing to help you join clauses.
+            // Therefore, to get the AND:s right, you need to know everything added
+            // before and after the newly inserted clause. Also, you can't read it
+            // back from the SQLiteQueryBuilder. Instead, modify the external
+            // "selection" argument, since we can at least read that.
+            if(selection == null ||
+               selection.equals("")) {
+                selection = "0";
+            } else {
+                selection += " AND 0";
+            }
         }
 
         // Generate the body of the query.
