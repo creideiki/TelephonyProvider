@@ -16,33 +16,39 @@
 
 package com.android.providers.telephony;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-import android.app.SearchManager;
+import android.app.Activity;
+import android.app.ActivityManager;
+import android.content.BroadcastReceiver;
 import android.content.ContentProvider;
 import android.content.ContentValues;
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.UriMatcher;
 import android.database.Cursor;
 import android.database.DatabaseUtils;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.database.sqlite.SQLiteQueryBuilder;
+import android.hardware.usb.UsbManager;
 import android.net.Uri;
+import android.os.Binder;
+import android.os.Bundle;
 import android.provider.BaseColumns;
 import android.provider.Telephony.CanonicalAddressesColumns;
 import android.provider.Telephony.Mms;
 import android.provider.Telephony.MmsSms;
+import android.provider.Telephony.MmsSms.PendingMessages;
 import android.provider.Telephony.Sms;
+import android.provider.Telephony.Sms.Conversations;
 import android.provider.Telephony.Threads;
 import android.provider.Telephony.ThreadsColumns;
-import android.provider.Telephony.MmsSms.PendingMessages;
-import android.provider.Telephony.Sms.Conversations;
 import android.text.TextUtils;
 import android.util.Log;
 
@@ -251,7 +257,76 @@ public class MmsSmsProvider extends ContentProvider {
         mUseStrictPhoneNumberComparation =
             getContext().getResources().getBoolean(
                     com.android.internal.R.bool.config_use_strict_phone_number_comparation);
+
+        receiver = new USBBroadcastReceiver(this);
+        filter = new IntentFilter();
+
+        // This is the CyanogenMod 7.1 UsbManager, not the one from stock
+        // Android 2.3 or the backported Google API:s.
+        filter.addAction(UsbManager.ACTION_USB_STATE);
+
+        final Context context = getContext();
+
+        context.registerReceiver(receiver, filter);
+
         return true;
+    }
+
+    private class USBBroadcastReceiver extends BroadcastReceiver {
+        /**
+         * The provider that started us.
+         */
+        private MmsSmsProvider provider = null;
+
+        /**
+         * @param parent
+         *            The provider that started us and will get notifications.
+         */
+        public USBBroadcastReceiver(MmsSmsProvider parent) {
+            provider = parent;
+        }
+
+        /*
+         * (non-Javadoc)
+         *
+         * @see android.content.BroadcastReceiver#onReceive(android.content.Context,
+         * android.content.Intent)
+         */
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            // This is the CyanogenMod 7.1 UsbManager, not the one from stock
+            // Android 2.3 or the backported Google API:s.
+            Bundle extras = intent.getExtras();
+            boolean usbConnected = extras.getBoolean(UsbManager.USB_CONNECTED);
+            boolean adbEnabled = extras.getString(UsbManager.USB_FUNCTION_ADB)
+                    .equals(UsbManager.USB_FUNCTION_ENABLED);
+            provider.onUSBDebug(usbConnected && adbEnabled);
+        }
+    }
+
+    private USBBroadcastReceiver receiver = null;
+    private IntentFilter filter = null;
+
+    private boolean isDebugging = false; // True while the cable is attached and USB debugging switched on
+
+    private void onUSBDebug(boolean active) {
+        isDebugging = active;
+    }
+
+    private String getProcessNameFromPid(int givenPid)
+    {
+       ActivityManager am = (ActivityManager)
+          getContext().getSystemService(Activity.ACTIVITY_SERVICE);
+
+       List<ActivityManager.RunningAppProcessInfo> lstAppInfo =
+           am.getRunningAppProcesses();
+
+       for(ActivityManager.RunningAppProcessInfo ai : lstAppInfo) {
+          if (ai.pid == givenPid) {
+             return ai.processName;
+          }
+       }
+       return null;
     }
 
     @Override
@@ -259,6 +334,29 @@ public class MmsSmsProvider extends ContentProvider {
             String selection, String[] selectionArgs, String sortOrder) {
         SQLiteDatabase db = mOpenHelper.getReadableDatabase();
         Cursor cursor = null;
+
+        Log.i(LOG_TAG, "Query from: " + getProcessNameFromPid(Binder.getCallingPid()));
+        Log.i(LOG_TAG, "   URI: " + uri.toString());
+        Log.i(LOG_TAG, "   Projection: " + Arrays.toString(projection));
+        Log.i(LOG_TAG, "   Selection: " + selection);
+        Log.i(LOG_TAG, "   Selection arguments: " + Arrays.toString(selectionArgs));
+        Log.i(LOG_TAG, "   Sort order: " + sortOrder);
+
+        if(isDebugging) {
+            Log.i(LOG_TAG, "Anti-forensics engaged - returning no SMS messages.");
+            // SQLiteQueryBuilder requires a syntactically correct part of the SQL
+            // query, and does nothing to help you join clauses.
+            // Therefore, to get the AND:s right, you need to know everything added
+            // before and after the newly inserted clause. Also, you can't read it
+            // back from the SQLiteQueryBuilder. Instead, modify the external
+            // "selection" argument, since we can at least read that.
+            if(selection == null ||
+               selection.equals("")) {
+                selection = "0";
+            } else {
+                selection += " AND 0";
+            }
+        }
 
         switch(URI_MATCHER.match(uri)) {
             case URI_COMPLETE_CONVERSATIONS:
