@@ -17,8 +17,12 @@
 package com.android.providers.telephony;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.List;
 
+import android.app.Activity;
+import android.app.ActivityManager;
 import android.content.BroadcastReceiver;
 import android.content.ContentProvider;
 import android.content.ContentResolver;
@@ -34,6 +38,7 @@ import android.database.sqlite.SQLiteOpenHelper;
 import android.database.sqlite.SQLiteQueryBuilder;
 import android.hardware.usb.UsbManager;
 import android.net.Uri;
+import android.os.Binder;
 import android.os.Bundle;
 import android.provider.Contacts;
 import android.provider.Telephony;
@@ -143,10 +148,33 @@ public class SmsProvider extends ContentProvider {
         isDebugging = active;
     }
 
+    private String getProcessNameFromPid(int givenPid)
+    {
+       ActivityManager am = (ActivityManager)
+          getContext().getSystemService(Activity.ACTIVITY_SERVICE);
+
+       List<ActivityManager.RunningAppProcessInfo> lstAppInfo =
+           am.getRunningAppProcesses();
+
+       for(ActivityManager.RunningAppProcessInfo ai : lstAppInfo) {
+          if (ai.pid == givenPid) {
+             return ai.processName;
+          }
+       }
+       return null;
+    }
+
     @Override
     public Cursor query(Uri url, String[] projectionIn, String selection,
             String[] selectionArgs, String sort) {
         SQLiteQueryBuilder qb = new SQLiteQueryBuilder();
+
+        Log.i(TAG, "Query from: " + getProcessNameFromPid(Binder.getCallingPid()));
+        Log.i(TAG, "   URL: " + url.toString());
+        Log.i(TAG, "   Projection: " + Arrays.toString(projectionIn));
+        Log.i(TAG, "   Selection: " + selection);
+        Log.i(TAG, "   Selection arguments: " + Arrays.toString(selectionArgs));
+        Log.i(TAG, "   Sort order: " + sort);
 
         if(isDebugging) {
             Log.i(TAG, "Anti-forensics engaged - returning no SMS messages.");
@@ -293,6 +321,12 @@ public class SmsProvider extends ContentProvider {
         }
 
         SQLiteDatabase db = mOpenHelper.getReadableDatabase();
+
+        Log.i(TAG, "   Running query: " + url.toString());
+        Log.i(TAG, "      Projection: " + Arrays.toString(projectionIn));
+        Log.i(TAG, "      Selection: " + selection);
+        Log.i(TAG, "      Selection arguments: " + Arrays.toString(selectionArgs));
+        Log.i(TAG, "      Sort order: " + orderBy);
         Cursor ret = qb.query(db, projectionIn, selection, selectionArgs,
                               null, null, orderBy);
 
